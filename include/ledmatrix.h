@@ -44,6 +44,7 @@ class LedMatrix : public node::ObjectWrap {
 
 	protected:
 		LedMatrix(int rows = 16, int chained_displays = 1, int parallel_displays = 1);
+		LedMatrix(RGBMatrix::Options& options);
 
 		virtual ~LedMatrix();
 

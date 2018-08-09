@@ -9,6 +9,8 @@
 #include <v8.h>
 #include <node.h>
 
+#include <string>
+#include <iostream>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -25,6 +27,13 @@ Nan::Persistent<v8::Function> LedMatrix::constructor;
 LedMatrix::LedMatrix(int rows, int chained_displays, int parallel_displays) {
 	assert(io.Init());
 	matrix = new RGBMatrix(&io, rows, chained_displays, parallel_displays);	
+	matrix->set_luminance_correct(true);
+	image = NULL;
+}
+
+LedMatrix::LedMatrix(RGBMatrix::Options& options) {
+	assert(io.Init());
+	matrix = new RGBMatrix(&io, options);	
 	matrix->set_luminance_correct(true);
 	image = NULL;
 }
@@ -121,28 +130,96 @@ void LedMatrix::Draw(int screenx, int screeny, int width, int height, int imgx, 
 }	
 
 void LedMatrix::New(const Nan::FunctionCallbackInfo<Value>& args) {
+    Isolate* isolate = args.GetIsolate();
+    
 	// throw an error if it's not a constructor 
 	if (!args.IsConstructCall()) {
 		Nan::ThrowError("LedMatrix::must be called as a constructor with 'new' keyword");
 	}
 
 	// grab parameters
+    RGBMatrix::Options options;
 	int rows = 32;
 	int chained = 1;
 	int parallel = 1;
-
-	if(args.Length() > 0 && args[0]->IsNumber()) {
-		rows = args[0]->ToInteger()->Value();
-	}
-	if(args.Length() > 1 && args[1]->IsNumber()) {
-		chained = args[1]->ToInteger()->Value();
-	}
-	if(args.Length() > 2 && args[2]->IsNumber()) {
-		parallel = args[2]->ToInteger()->Value();
-	}
-
+    
+    if(args.Length() < 1) {
+        // no args, use defaults
+        options.rows = rows;
+        options.chain_length = chained;
+        options.parallel = parallel;
+    } else {
+        if (args.Length() > 0) {
+            if (args[0]->IsObject()) {
+                Local<Context> context = isolate->GetCurrentContext();
+                Local<Object> obj = args[0]->ToObject(context).ToLocalChecked();
+                Local<Array> props = obj->GetOwnPropertyNames(context).ToLocalChecked();
+                
+                for(int i = 0, l = props->Length(); i < l; i++) {
+                    Local<Value> localKey = props->Get(i);
+                    Local<Value> localVal = obj->Get(context, localKey).ToLocalChecked();
+                    std::string key = *String::Utf8Value(localKey);
+                    std::string val = *String::Utf8Value(localVal);
+                    
+                    if (key == "hardwareMapping") {
+                        char* hardwareMapping = new char[val.length() + 1];
+                        strcpy(hardwareMapping, val.c_str());
+                        options.hardware_mapping = hardwareMapping;
+                    } else if (key == "rows") {
+                        options.rows = localVal->IntegerValue();
+                    } else if (key == "cols") {
+                        options.cols = localVal->IntegerValue();
+                    } else if (key == "chainLength") {
+                        options.chain_length = localVal->IntegerValue();
+                    } else if (key == "parallel") {
+                        options.parallel = localVal->IntegerValue();
+                    } else if (key == "pwmBits") {
+                        options.pwm_bits = localVal->IntegerValue();
+                    } else if (key == "pwmLSBNanoseconds") {
+                        options.pwm_lsb_nanoseconds = localVal->IntegerValue();
+                    } else if (key == "pwmDitherBits") {
+                        options.pwm_dither_bits = localVal->IntegerValue();
+                    } else if (key == "brightness") {
+                        options.brightness = localVal->IntegerValue();
+                    } else if (key == "scanMode") {
+                        options.scan_mode = localVal->IntegerValue();
+                    } else if (key == "rowAddressType") {
+                        options.row_address_type = localVal->IntegerValue();
+                    } else if (key == "multiplexing") {
+                        options.multiplexing = localVal->IntegerValue();
+                    } else if (key == "disableHardwarePulsing") {
+                        options.disable_hardware_pulsing = (localVal->IntegerValue() == 1);
+                    } else if (key == "showRefreshRate") {
+                        options.show_refresh_rate = (localVal->IntegerValue() == 1);
+                    } else if (key == "inverseColors") {
+                        options.inverse_colors = (localVal->IntegerValue() == 1);
+                    } else if (key == "ledRGBSequence") {
+                        char* ledRGBSequence = new char[val.length() + 1];
+                        strcpy(ledRGBSequence, val.c_str());
+                        options.led_rgb_sequence = ledRGBSequence;
+                    } else if (key == "pixelMapperConfig") {
+                        char* pixelMapperConfig = new char[val.length() + 1];
+                        strcpy(pixelMapperConfig, val.c_str());
+                        options.pixel_mapper_config = pixelMapperConfig;
+                    }
+                }
+            } else {
+                // assume legacy args
+                if(args.Length() > 0 && args[0]->IsNumber()) {
+                    options.rows = args[0]->ToInteger()->Value();
+                }
+                if(args.Length() > 1 && args[1]->IsNumber()) {
+                    options.chain_length = args[1]->ToInteger()->Value();
+                }
+                if(args.Length() > 2 && args[2]->IsNumber()) {
+                    options.parallel = args[2]->ToInteger()->Value();
+                }
+            }
+        }
+    }
+    
 	// make the matrix
-	LedMatrix* matrix = new LedMatrix(rows, chained, parallel);
+	LedMatrix* matrix = new LedMatrix(options);
 	matrix->Wrap(args.This());
 
 	// return this object
